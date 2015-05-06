@@ -1,3 +1,5 @@
+%% 业务逻辑模块
+
 -module(moyou_http_business).
 
 
@@ -6,7 +8,7 @@
 
 -export([
     business/2
-        ]).
+]).
 
 -record(moyou_group_member, {gid, members = []}).
 
@@ -74,8 +76,8 @@ business("update_user_info", Obj) ->
                   null
           end,
     moyou_rpc_util:update_user_info(binary_to_list(Uid), Friends, binary_to_list(NickName),
-                                    DeviceToken, Imei, Blacks, SilenceConfig, MessageConfig,
-                                    Env),
+        DeviceToken, Imei, Blacks, SilenceConfig, MessageConfig,
+        Env),
     {true, ok};
 business("query_group_id", Obj) ->
     {ok, Gid} = rfc4627:get_field(Obj, "gid"),
@@ -100,14 +102,14 @@ business("query_group_msg", Obj) ->
                         lists:concat([Prefix, "_", SessionKey])
                 end,
     Messages = moyou_rpc_util:get_session_msg(binary_to_list(Uid), SessionID, list_to_integer(Seq), Size),
-    Entity = [encode_msg_to_json(Message, binary_to_list(Uid)) ||Message <- Messages],
+    Entity = [encode_msg_to_json(Message, binary_to_list(Uid)) || Message <- Messages],
     {true, Entity};
 business(_, _Obj) ->
     {false, list_to_binary("method undefined")}.
 
 
 
-process_counter()->
+process_counter() ->
     Counter = lists:map(fun process_counter/1, [node() | nodes()]),
     L = [X || X <- Counter, ordsets:is_subset([ok], tuple_to_list(X)) =:= true],
     process_counter_to_json(L, []).
@@ -116,30 +118,38 @@ process_counter(From) ->
         P = rpc:call(From, erlang, whereis, [ejabberd_c2s_sup]),
         case is_pid(P) of
             true ->
-                {links, L} = rpc:call(From,erlang,process_info,[P, links]),
+                {links, L} = rpc:call(From, erlang, process_info, [P, links]),
                 {ok, {From, length(L)}};
             _ ->
                 {no_ejabberd_node, From}
         end
     catch
-        _:_->
-            {no_ejabberd_node,From}
+        _:_ ->
+            {no_ejabberd_node, From}
     end.
-process_counter_to_json([E | L], List)->
-    {ok,{Node, Total}} = E,
-    JN = {obj, [{node, Node},{totalCount, Total}]},
+process_counter_to_json([E | L], List) ->
+    {ok, {Node, Total}} = E,
+    JN = {obj, [{node, Node}, {totalCount, Total}]},
     process_counter_to_json(L, [JN | List]);
-process_counter_to_json([], List)->
+process_counter_to_json([], List) ->
     List.
 
 
+%% 通过群组ID,删除一个群组
+%% - 首先从本地群组表中查询指定组的成员列表
+%% - 获取会话ID
+%% - 清除用户会话信息
+%% - 删除群组
 remove_group(Gid) ->
     Members = mod_customize:query_local_group_member(Gid),
     SessionID = moyou_util:get_session_id(Gid),
     moyou_rpc_util:clear_user_session_info(Members, SessionID),
     mnesia:dirty_delete(moyou_group_member_tab, Gid).
 
-
+%% 删除用户
+%% - 获取会话ID
+%% - 删除会话信息
+%% - 查询本地群组成员列表, 从该列表中删除Uid指定的用户, 并回写mnesia数据库更新群组用户列表
 remove_user(Gid, Uid) ->
     SessionID = moyou_util:get_session_id(Gid),
     moyou_rpc_util:clear_user_session_info([Uid], SessionID),
@@ -152,7 +162,9 @@ remove_user(Gid, Uid) ->
             mnesia:dirty_write(moyou_group_member_tab, R)
     end.
 
-
+%% 添加一个用户到一个群组
+%% - 当群组成员为空, 跳过不处理
+%% - 当群组成员非空, 判断当Uid在成员列表中时, 跳过不处理, 当不在成员列表中时, 把该成员添加到群组列表中.
 append_user(Gid, Uid) ->
     case mod_customize:query_local_group_member(Gid) of
         [] ->
@@ -163,19 +175,22 @@ append_user(Gid, Uid) ->
                     skip;
                 false ->
                     Members1 = [Uid | Members],
-                    R = #moyou_group_member{gid = Gid, members = Members1},
-                    mnesia:dirty_write(moyou_group_member_tab, R)
+                    UserRecord = #moyou_group_member{gid = Gid, members = Members1},
+                    mnesia:dirty_write(moyou_group_member_tab, UserRecord)
             end
     end.
 
 
+%% 编码消息
 encode_msg_to_json(Message, Uid) ->
     {xmlelement, Name, Attrs, Els} = element(6, Message),
     From = element(4, Message),
     To = #jid{user = Uid, server = From#jid.server, resource = "", luser = Uid, lserver = From#jid.lserver, lresource = ""},
-    Attrs1 = jlib:replace_from_to_attrs(jlib:jid_to_string(From),
-                                        jlib:jid_to_string(To),
-                                        Attrs),
+    Attrs1 = jlib:replace_from_to_attrs(
+        jlib:jid_to_string(From),
+        jlib:jid_to_string(To),
+        Attrs
+    ),
     FixedPacket = {xmlelement, Name, Attrs1, Els},
     Text = xml:element_to_binary(FixedPacket),
     {obj, [{item, Text}]}.

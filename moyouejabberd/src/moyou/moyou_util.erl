@@ -86,8 +86,8 @@ create_or_copy_table(TableName, Opts, Copy) ->
         _ ->
             skip
     end.
-    
 
+%% 把os:timestamp返回的时间作为随机种子, 获取一个随机数. 参数Num为最大值.
 random(Num) ->
     {A, B, C} = os:timestamp(),
     random:seed(A, B, C),

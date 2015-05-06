@@ -1,3 +1,5 @@
+%% 会话模块,用户存储客户端会话数据
+
 -module(moyou_session).
 
 -include("ejabberd.hrl").
@@ -19,9 +21,9 @@
     pack_message/6,
     pack_db_message/6,
     init_session_seq/2
-        ]).
+]).
 
-
+%% 会话状态数据结构
 -record(state, {session_id, seq, count = 0, resv1, resv2, resv3}).
 
 
@@ -31,23 +33,23 @@
 -record(moyou_session_seq, {session_id, seq = 0, resv1, resv2, resv3}).
 
 
-pack_message(Mid, SessionID, From, Mt, Packet, Time) ->
+pack_message(Mid, SessionID, From, MessageType, Packet, Time) ->
     #moyou_message{id = Mid,
-                   session_id = SessionID,
-                   from = From,
-                   mt = Mt,
-                   packet = Packet,
-                   time = Time
-                  }.
+    session_id = SessionID,
+    from = From,
+    mt = MessageType,
+    packet = Packet,
+    time = Time
+    }.
 
 pack_db_message(Mid, SessionID, From, Mt, Packet, Time) ->
     #moyou_message{id = Mid,
-                   session_id = SessionID,
-                   from = moyou_util:bitstring_to_term(From),
-                   mt = Mt,
-                   packet = binary_to_term(moyou_util:bitstring_to_term(Packet)),
-                   time = Time
-                  }.
+    session_id = SessionID,
+    from = moyou_util:bitstring_to_term(From),
+    mt = Mt,
+    packet = binary_to_term(moyou_util:bitstring_to_term(Packet)),
+    time = Time
+    }.
 
 
 start_link(SessionID) ->
@@ -116,7 +118,8 @@ handle_info(check, State) ->
         State#state.count > 0 ->
             erlang:send_after(30 * 1000, self(), check),
             {noreply, State#state{count = 0}};
-        true ->  %%30s内没有处理任何消息，自动stop
+        true ->
+            %%30s内没有处理任何消息，自动stop
             {stop, normal, State}
     end;
 handle_info(_Info, State) ->
